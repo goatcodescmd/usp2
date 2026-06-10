@@ -1,0 +1,762 @@
+================================================================================
+         CSL66 - UNIX SYSTEM PROGRAMMING LABORATORY
+         EXPLANATION OF ALL PROGRAMS (Exercises 1 to 12)
+         Department of Computer Science & Engineering
+         Ramaiah Institute of Technology
+================================================================================
+
+--------------------------------------------------------------------------------
+EXERCISE 1a - Display File Content in Reverse Order using lseek()
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  lseek() is a system call used to move the file offset (read/write position)
+  to any location within a file without actually reading or writing data.
+
+SYSTEM CALL USED:
+  off_t lseek(int fd, off_t offset, int whence);
+  - fd     : file descriptor
+  - offset : number of bytes to move
+  - whence : reference point (SEEK_SET=start, SEEK_CUR=current, SEEK_END=end)
+
+HOW THE PROGRAM WORKS:
+  1. Opens the file in read-only mode using open().
+  2. Moves the offset to the END of the file using lseek(fd, 0, SEEK_END).
+     This returns the file size.
+  3. In a loop, decrements the offset by 1, seeks to that position, reads
+     one character, and writes it to stdout.
+  4. This continues until offset reaches 0, printing characters in reverse.
+  5. Closes the file descriptor.
+
+KEY POINTS:
+  - lseek() does NOT read data; it only repositions the file pointer.
+  - SEEK_END with offset 0 gives the file size (end position).
+  - Reading one byte at a time from the end to the start gives reverse output.
+
+--------------------------------------------------------------------------------
+EXERCISE 1b - Parent and Child Sharing File Offset after fork()
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  When fork() creates a child process, the child gets a COPY of the parent's
+  file descriptors. Importantly, both parent and child share the SAME underlying
+  open file description (including the file offset). Changes to the offset by
+  one process are visible to the other.
+
+SYSTEM CALLS USED:
+  pid_t fork()  - creates a child process
+  ssize_t read() - reads from file descriptor
+  off_t lseek()  - checks current offset
+
+HOW THE PROGRAM WORKS:
+  1. Parent opens a text file and reads 5 bytes. File offset moves to 5.
+  2. Parent calls fork(). Child is created and inherits the open fd with
+     offset already at 5.
+  3. Child prints the current offset (shows 5, same as parent's).
+  4. Child reads the next 5 bytes starting from offset 5.
+  5. This demonstrates that both processes share the same file offset.
+
+KEY POINTS:
+  - After fork(), both processes point to the SAME open file description in
+    the kernel file table (not just the same file, but the same entry).
+  - This is different from two independent open() calls on the same file,
+    which would have separate offsets.
+
+--------------------------------------------------------------------------------
+EXERCISE 2a - Display File Details using stat Structure
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  The stat() system call retrieves metadata about a file without opening it.
+  The results are stored in a struct stat, which holds information like size,
+  inode number, permissions, owner, timestamps, etc.
+
+SYSTEM CALL USED:
+  int stat(const char *pathname, struct stat *statbuf);
+
+STRUCT STAT FIELDS USED:
+  st_ino    - inode number (unique file identifier on disk)
+  st_size   - file size in bytes
+  st_nlink  - number of hard links
+  st_blksize- preferred block size for filesystem I/O
+  st_blocks - number of 512B blocks allocated
+  st_uid    - user ID of owner
+  st_gid    - group ID of owner
+  st_mtime  - last modification time
+  st_atime  - last access time
+  st_mode   - file type and permissions (bitmask)
+
+HOW THE PROGRAM WORKS:
+  1. Calls stat() on the given filename to fill the stat structure.
+  2. Prints at least 5 fields: inode, size, links, block size, blocks.
+  3. Uses getpwuid() and getgrgid() to convert UID/GID to names.
+  4. Uses ctime() to convert timestamps to readable format.
+  5. Decodes st_mode bitmask to print rwx permissions.
+
+KEY POINTS:
+  - stat() follows symbolic links; lstat() does not (gives info about the link).
+  - st_mode contains both file type bits and permission bits.
+  - Use S_ISDIR(), S_ISREG() macros to check file type.
+
+--------------------------------------------------------------------------------
+EXERCISE 2b - Simulate system() Function
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  The system() library function runs a shell command from within a C program.
+  It internally uses fork(), execl() with "/bin/sh -c", and waitpid().
+  This program re-implements that logic manually (my_system()).
+
+SYSTEM CALLS USED:
+  fork()    - creates child process
+  execl()   - replaces child with /bin/sh
+  waitpid() - parent waits for child to finish
+
+HOW THE PROGRAM WORKS:
+  1. my_system(command) is called with a shell command string.
+  2. It calls fork() to create a child process.
+  3. The child executes: execl("/bin/sh", "sh", "-c", command, NULL)
+     This runs the command through the shell interpreter.
+  4. The parent calls waitpid() to wait for the child to complete.
+  5. Returns the exit status of the child.
+
+KEY POINTS:
+  - execl() replaces the child process image; if it succeeds, it never returns.
+  - waitpid() blocks the parent until the child finishes.
+  - WIFEXITED(status) and WEXITSTATUS(status) decode the child's exit code.
+  - _exit() is used in child (not exit()) to avoid flushing parent's buffers.
+
+--------------------------------------------------------------------------------
+EXERCISE 3a - Remove Empty Files from a Directory
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  This program scans a directory, checks each file's size using stat(), and
+  removes files with size 0 using unlink().
+
+SYSTEM CALLS / FUNCTIONS USED:
+  opendir()  - opens a directory stream
+  readdir()  - reads one directory entry at a time
+  stat()     - gets file info (to check size)
+  unlink()   - deletes a file (removes directory entry)
+  closedir() - closes the directory stream
+
+HOW THE PROGRAM WORKS:
+  1. Opens the specified directory with opendir().
+  2. Loops through entries using readdir().
+  3. Skips "." and ".." (current and parent directory entries).
+  4. Builds the full file path: dirpath + "/" + entry name.
+  5. Calls stat() to get file info.
+  6. If it's a regular file (S_ISREG) AND size is 0, calls unlink() to delete.
+  7. Closes the directory stream.
+
+KEY POINTS:
+  - readdir() returns NULL when there are no more entries.
+  - Always skip "." and ".." to avoid infinite loops or errors.
+  - unlink() removes the directory entry (hard link) for a file.
+
+--------------------------------------------------------------------------------
+EXERCISE 3b - Implement ls -li Command
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  The ls -li command lists files in long format with inode numbers. This
+  program replicates it by reading directory entries and calling lstat() on
+  each file to get detailed attributes.
+
+SYSTEM CALLS / FUNCTIONS USED:
+  opendir(), readdir(), closedir() - directory traversal
+  lstat()    - get file info without following symlinks
+  getpwuid() - convert UID to username
+  getgrgid() - convert GID to group name
+  strftime() - format timestamps
+
+ATTRIBUTES PRINTED (5+):
+  1. Inode number (st_ino)
+  2. Permissions (decoded from st_mode)
+  3. Hard link count (st_nlink)
+  4. Owner name (via getpwuid)
+  5. File size (st_size)
+  6. Modification time (st_mtime)
+  7. File name
+
+HOW THE PROGRAM WORKS:
+  1. Opens the directory and iterates through entries.
+  2. For each entry, builds the full path and calls lstat().
+  3. Decodes permissions bit by bit from st_mode.
+  4. Looks up owner and group names from UID/GID.
+  5. Formats modification time using strftime().
+  6. Prints all attributes in a tabular format.
+
+--------------------------------------------------------------------------------
+EXERCISE 4a - Soft Links and Hard Links
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  - Hard Link: Another directory entry pointing to the SAME inode (same data).
+    Same inode number, link count increases.
+  - Soft Link (Symbolic Link): A special file containing the PATH to another
+    file. Has its OWN inode number.
+
+SYSTEM CALLS USED:
+  link(oldpath, newpath)    - creates a hard link
+  symlink(target, linkpath) - creates a symbolic link
+  stat()  - follows symlinks to get target info
+  lstat() - does NOT follow symlinks (gives info about link itself)
+
+HOW THE PROGRAM WORKS:
+  1. Creates an original file and writes some content.
+  2. Calls link() to create a hard link.
+  3. Calls symlink() to create a soft link.
+  4. Uses stat() on original and hard link → same inode, link count = 2.
+  5. Uses lstat() on soft link → different inode, size = length of path string.
+  6. Prints comparison table.
+
+KEY POINTS:
+  - Hard links cannot cross filesystems or link to directories.
+  - Soft links can cross filesystems and can link to directories.
+  - Deleting the original file: hard link still works, soft link becomes broken.
+  - Hard link count increments with each new hard link created.
+
+--------------------------------------------------------------------------------
+EXERCISE 4b - Child Executes Interpreter File (echoall)
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  An interpreter file is a text file starting with "#!" (shebang) that tells
+  the kernel which program to use to execute it. When execl() runs such a file,
+  the kernel reads the shebang line and uses that interpreter.
+
+SYSTEM CALLS USED:
+  fork()  - creates child process
+  execl() - executes the interpreter file
+  wait()  - parent waits for child
+
+HOW THE PROGRAM WORKS:
+  1. echoall.c: A simple program that prints all argv[] arguments it receives.
+     Compiled to an executable: ./echoall
+  2. myinterp: An interpreter file with shebang line:
+       #!/full/path/to/echoall ARG_FROM_INTERP
+  3. Main program (4b.c): forks a child. The child calls execl() on myinterp
+     with additional arguments.
+  4. The kernel sees the shebang, runs echoall as the interpreter, and passes:
+     - The path of myinterp
+     - The argument from the shebang line
+     - The arguments from execl()
+  5. echoall prints ALL received arguments.
+
+KEY POINTS:
+  - The shebang argument becomes argv[1] in the interpreter program.
+  - execl() arguments come after the shebang argument.
+  - The full path must be used in the shebang line.
+
+--------------------------------------------------------------------------------
+EXERCISE 5a - Copy Access and Modification Time using utime()
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  Every file has timestamps: access time (atime) and modification time (mtime).
+  The utime() function allows setting these timestamps explicitly for any file
+  you have write permission on.
+
+SYSTEM CALLS USED:
+  stat()  - reads timestamps from source file
+  utime() - sets timestamps on destination file
+
+STRUCT USED:
+  struct utimbuf {
+      time_t actime;   // access time
+      time_t modtime;  // modification time
+  };
+
+HOW THE PROGRAM WORKS:
+  1. Calls stat() on the source file to read st_atime and st_mtime.
+  2. Prints both timestamps for the source file.
+  3. Fills a utimbuf struct with the source's timestamps.
+  4. Calls utime(destfile, &new_times) to apply them to the destination.
+  5. Calls stat() on destination to verify the change and prints results.
+
+KEY POINTS:
+  - utime() with NULL as second argument sets both times to the current time.
+  - Useful for preserving timestamps during file copying (like cp -p).
+  - ctime() converts time_t to a human-readable string.
+
+--------------------------------------------------------------------------------
+EXERCISE 5b - sigaction with SIGINT Signal Handler
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  Signals are software interrupts sent to processes. SIGINT (signal 2) is sent
+  when the user presses Ctrl+C. sigaction() is the preferred way to set up
+  signal handlers (more reliable than signal()).
+
+SYSTEM CALL USED:
+  int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+
+STRUCT sigaction FIELDS:
+  sa_handler  - pointer to signal handler function
+  sa_mask     - signals to block during handler execution
+  sa_flags    - behavior flags
+
+HOW THE PROGRAM WORKS:
+  1. Sets up a struct sigaction with sigint_handler as the handler.
+  2. Calls sigaction(SIGINT, &sa, NULL) to register it.
+  3. Program runs in an infinite loop printing every 2 seconds.
+  4. When user presses Ctrl+C, sigint_handler() is called.
+  5. Inside the handler: signal(SIGINT, SIG_DFL) resets to default behavior.
+  6. Next Ctrl+C terminates the program normally (default SIGINT behavior).
+
+KEY POINTS:
+  - sigaction() is preferred over signal() for portability and reliability.
+  - SIG_DFL restores the default action; SIG_IGN ignores the signal.
+  - sigemptyset() initializes the signal mask to block no signals.
+
+--------------------------------------------------------------------------------
+EXERCISE 6a - Read N Characters and Append using dup2()
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  dup2(oldfd, newfd) duplicates a file descriptor to a specific number.
+  If newfd is already open, it is closed first. Here, dup2() is used to
+  temporarily redirect stdout to write into a file.
+
+SYSTEM CALLS USED:
+  read()  - reads from file
+  dup()   - duplicates stdout for backup
+  dup2()  - redirects stdout to the file fd
+  write() - writes to the file (via redirected stdout)
+
+HOW THE PROGRAM WORKS:
+  1. Opens the file and reads n characters into buf[].
+  2. Opens the same file again in append mode.
+  3. Backs up stdout: fd_backup = dup(STDOUT_FILENO).
+  4. Redirects stdout to the file: dup2(fd_write, STDOUT_FILENO).
+  5. printf() now writes to the file instead of terminal.
+  6. Restores stdout: dup2(fd_backup, STDOUT_FILENO).
+  7. Prints confirmation to terminal.
+
+KEY POINTS:
+  - dup2() makes STDOUT_FILENO refer to the file descriptor.
+  - Always back up and restore stdout to avoid losing terminal output.
+  - After dup2(), the original fd and STDOUT_FILENO both refer to the same file.
+
+--------------------------------------------------------------------------------
+EXERCISE 6b - File Region Locking (Last 100 Bytes)
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  File locking prevents race conditions when multiple processes access the same
+  file. fcntl() with F_GETLK checks if a region is locked, F_SETLK sets a lock.
+
+SYSTEM CALL USED:
+  int fcntl(int fd, int cmd, struct flock *lock);
+
+STRUCT flock FIELDS:
+  l_type   - F_RDLCK, F_WRLCK, or F_UNLCK
+  l_whence - SEEK_SET, SEEK_CUR, or SEEK_END
+  l_start  - starting offset of region
+  l_len    - length of region (0 = to end of file)
+  l_pid    - PID of locking process (set by F_GETLK)
+
+HOW THE PROGRAM WORKS:
+  1. Opens (or creates) the file; ensures it has at least 100 bytes.
+  2. Sets up flock for the last 100 bytes (size - 100 to size).
+  3. F_GETLK: checks if any process has a conflicting lock.
+     - If locked: prints the PID of the locking process.
+     - If not locked: proceeds to lock it.
+  4. F_SETLK: applies an exclusive write lock (F_WRLCK).
+  5. Reads the last 50 bytes of the file.
+  6. Unlocks (F_UNLCK) after reading.
+
+KEY POINTS:
+  - F_GETLK modifies the flock struct to describe the blocking lock (if any).
+  - F_SETLK is non-blocking; F_SETLKW blocks until lock is available.
+  - Always unlock when done to avoid deadlocks.
+
+--------------------------------------------------------------------------------
+EXERCISE 7a - setjmp and longjmp with register and volatile Variables
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  setjmp() saves the execution environment (stack, registers) at a point.
+  longjmp() restores that environment, effectively jumping back to the setjmp().
+  The behavior of local variables after longjmp depends on their storage class:
+  - volatile: value IS preserved (read from memory, not register).
+  - register: value may be LOST (compiler may use cached register value).
+  - normal auto: value may or may not be preserved (implementation-defined).
+
+FUNCTIONS USED:
+  int setjmp(jmp_buf env)    - saves environment; returns 0 on direct call,
+                                non-zero when returned from longjmp.
+  void longjmp(jmp_buf env, int val) - restores saved environment.
+
+HOW THE PROGRAM WORKS:
+  1. Declares register, volatile, and normal int variables.
+  2. Calls setjmp() - returns 0 on first call.
+  3. Modifies all three variables to new values.
+  4. Calls longjmp() - jumps back to setjmp().
+  5. setjmp() now returns 1 (non-zero), goes to else branch.
+  6. Prints all three variables to observe which values survived.
+
+KEY POINTS:
+  - volatile keyword forces the compiler to always read from memory.
+  - register suggests CPU register storage (optimizer may ignore longjmp reset).
+  - Use volatile for variables that must retain values across longjmp calls.
+
+--------------------------------------------------------------------------------
+EXERCISE 7b - Simulate cp Command
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  The Unix cp command copies a file by reading the source and writing to a
+  destination. This program implements it using low-level I/O system calls with
+  full error reporting at each step.
+
+SYSTEM CALLS USED:
+  open()  - open source (O_RDONLY) and destination (O_WRONLY|O_CREAT|O_TRUNC)
+  read()  - read a buffer from source
+  write() - write buffer to destination
+  close() - close both file descriptors
+  fstat() - check if source is a regular file
+
+HOW THE PROGRAM WORKS:
+  1. Validates argument count (must provide source and destination).
+  2. Opens source file for reading; reports error if not found.
+  3. Uses fstat() to ensure source is a regular file, not a directory.
+  4. Opens destination file (creates if absent, truncates if exists).
+  5. In a loop: reads BUFSIZE (4096) bytes from source, writes to destination.
+  6. Checks that bytes written equals bytes read (short writes are errors).
+  7. Verifies read() didn't fail and closes both files.
+
+KEY POINTS:
+  - O_TRUNC clears the destination file if it already exists.
+  - Always handle partial reads/writes in production code.
+  - strerror(errno) gives a human-readable error description.
+
+--------------------------------------------------------------------------------
+EXERCISE 8a - Determine File Type using stat
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  The st_mode field in struct stat encodes both the file type and permissions.
+  The file type bits are extracted using the S_IFMT mask and compared against
+  type constants like S_IFREG, S_IFDIR, S_IFLNK, etc.
+
+SYSTEM CALL USED:
+  lstat() - used instead of stat() so symlinks are identified as symlinks
+            (stat() would follow the link and report the target's type).
+
+FILE TYPE MACROS:
+  S_IFREG  - regular file
+  S_IFDIR  - directory
+  S_IFLNK  - symbolic link
+  S_IFCHR  - character device (e.g., /dev/tty)
+  S_IFBLK  - block device (e.g., /dev/sda)
+  S_IFIFO  - named pipe (FIFO)
+  S_IFSOCK - socket
+
+HOW THE PROGRAM WORKS:
+  1. Calls lstat() on the given file path.
+  2. Extracts type bits: sb.st_mode & S_IFMT
+  3. Uses a switch-case to print the human-readable file type.
+
+KEY POINTS:
+  - lstat() is critical; without it symlinks would always show as their target type.
+  - The S_IFMT mask isolates only the type bits from st_mode.
+  - Alternative: use S_ISREG(m), S_ISDIR(m) etc. macros (boolean checks).
+
+--------------------------------------------------------------------------------
+EXERCISE 8b - Child Uses exec() to Show access() Function
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  access() checks whether the calling process has permission to access a file.
+  This exercise combines fork(), exec(), and waitpid() with access() checks.
+
+SYSTEM CALLS USED:
+  fork()    - creates child process
+  execl()   - child replaces itself with access_demo program
+  waitpid() - parent waits for specific child PID
+  access()  - checks file accessibility
+
+ACCESS() FLAGS:
+  F_OK - file exists
+  R_OK - read permission
+  W_OK - write permission
+  X_OK - execute permission
+
+HOW THE PROGRAM WORKS:
+  1. access_demo.c: standalone program that calls access() on a given filename
+     and prints what permissions are available.
+  2. Main (8b.c): forks a child. Child uses execl() to run access_demo.
+  3. Parent uses waitpid() with the child's PID to wait specifically for it.
+  4. Both parent and child print their PIDs for identification.
+
+KEY POINTS:
+  - access() uses the REAL UID/GID, not the effective UID (unlike open()).
+  - execl() completely replaces the child's memory image.
+  - waitpid() with a specific PID waits for only that child.
+
+--------------------------------------------------------------------------------
+EXERCISE 9a - umask and chmod Functions
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  - umask: a process-level mask that clears (removes) permission bits when
+    creating new files. Final permissions = requested_mode & ~umask.
+  - chmod: explicitly sets the permissions of an existing file.
+
+SYSTEM CALLS USED:
+  umask(mode_t mask)               - sets the file creation mask
+  chmod(const char *path, mode_t)  - changes file permissions
+
+HOW THE PROGRAM WORKS:
+  UMASK demonstration:
+  1. Sets umask to 0 → creates file with 0777 → actual permissions: 0777.
+  2. Sets umask to 022 → creates file with 0777 → actual permissions: 0755
+     (because 022 clears write bits for group and others).
+  3. Sets umask to 077 → creates file with 0777 → actual permissions: 0700
+     (clears all group and other permissions).
+
+  CHMOD demonstration:
+  4. Changes the first file to 0644 (rw-r--r--), then 0755, then 0400.
+  5. Prints permissions after each chmod call.
+
+KEY POINTS:
+  - umask affects ALL file creations; chmod changes a specific existing file.
+  - umask bits that are SET get REMOVED from the new file's permissions.
+  - Only root or the file owner can chmod a file.
+  - umask is inherited by child processes.
+
+--------------------------------------------------------------------------------
+EXERCISE 9b - lseek Operations: Read, Seek, and Display
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  lseek() allows jumping to any position in a file. This exercise practices
+  all three reference points: SEEK_SET (from start), SEEK_CUR (from current
+  position), and SEEK_END (from end of file).
+
+SYSTEM CALLS USED:
+  lseek(fd, offset, whence) - repositions file offset
+  read()   - reads characters at current position
+  fstat()  - gets file size
+
+HOW THE PROGRAM WORKS:
+  i.   lseek(fd, 0, SEEK_SET) → read first 20 characters.
+  ii.  lseek(fd, 10, SEEK_SET) → seek to exactly byte 10 from start,
+       then read 20 characters.
+  iii. lseek(fd, 10, SEEK_CUR) → from current position, skip 10 bytes ahead,
+       then read 20 characters.
+  iv.  fstat() on fd → print st_size as the file size.
+
+KEY POINTS:
+  - SEEK_SET: absolute position from beginning.
+  - SEEK_CUR: relative position from current offset.
+  - SEEK_END: position relative to end (offset 0 = last byte).
+  - lseek() returns the new offset on success, -1 on error.
+
+--------------------------------------------------------------------------------
+EXERCISE 10a - Daemon Process
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  A daemon is a background process that has no controlling terminal and runs
+  independently. It is typically started at boot and runs until shutdown.
+  Creating a daemon requires several steps to detach from the terminal.
+
+SYSTEM CALLS USED:
+  fork()   - creates child; parent exits (shell prompt returns)
+  setsid() - creates a new session; child becomes session leader
+  chdir()  - changes to "/" to avoid blocking unmounts
+  umask()  - resets file creation mask
+  close()  - closes all inherited file descriptors
+  open()   - redirects stdin/stdout/stderr to /dev/null
+
+STEPS TO CREATE A DAEMON:
+  1. fork() → parent exits → child continues (detaches from terminal).
+  2. setsid() → child becomes new session leader with no controlling terminal.
+  3. Ignore SIGHUP → fork() again → grandchild can never acquire a terminal.
+  4. chdir("/") → avoid locking any filesystem.
+  5. umask(0) → full control over file permissions.
+  6. Close all open file descriptors (stdin, stdout, stderr, others).
+  7. Reopen stdin/stdout/stderr to /dev/null.
+  8. Daemon performs its work (here: writes to a log file every 5 seconds).
+
+KEY POINTS:
+  - After daemonize(), the process is fully detached from the terminal.
+  - ps aux shows the daemon with no terminal (? in TTY column).
+  - All output must go to log files since stdout is redirected to /dev/null.
+
+--------------------------------------------------------------------------------
+EXERCISE 10b - wait() and waitpid() System Calls
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  When a child process exits, it becomes a "zombie" until the parent collects
+  its exit status. wait() and waitpid() are used to collect this status.
+
+SYSTEM CALLS USED:
+  pid_t wait(int *status)                    - waits for ANY child
+  pid_t waitpid(pid_t pid, int *status, int options) - waits for SPECIFIC child
+
+DIFFERENCE BETWEEN wait() AND waitpid():
+  wait():
+  - Blocks until ANY child terminates.
+  - Cannot specify which child to wait for.
+  - Returns PID of the terminated child.
+
+  waitpid():
+  - Can wait for a SPECIFIC child by PID.
+  - pid = -1: wait for any child (same as wait).
+  - WNOHANG option: returns immediately if no child has exited (non-blocking).
+
+STATUS MACROS:
+  WIFEXITED(status)   - true if child exited normally
+  WEXITSTATUS(status) - exit code (0-255) if WIFEXITED is true
+  WIFSIGNALED(status) - true if child was killed by a signal
+
+HOW THE PROGRAM WORKS:
+  1. Forks two children; both sleep and exit with different codes (5 and 10).
+  2. wait() reaps whichever child finishes first (child 2 exits after 1 sec).
+  3. waitpid(pid1) specifically waits for child 1 (exits after 2 sec).
+  4. Prints which child was reaped and its exit code each time.
+
+--------------------------------------------------------------------------------
+EXERCISE 11a - Differentiate dup() and dup2()
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  Both dup() and dup2() duplicate a file descriptor, but differ in how the
+  new file descriptor number is chosen.
+
+SYSTEM CALLS USED:
+  int dup(int oldfd)           - duplicates to the LOWEST available fd number
+  int dup2(int oldfd, int newfd) - duplicates to a SPECIFIC fd number
+
+DIFFERENCE:
+  dup():
+  - Returns the lowest unused file descriptor number.
+  - You cannot control which number you get.
+  - Used when you just need another reference to the same file.
+
+  dup2():
+  - Forces the duplicate to be exactly newfd.
+  - If newfd is already open, it is closed first automatically.
+  - Used for I/O redirection (e.g., making stdout point to a file).
+
+HOW THE PROGRAM WORKS:
+  1. dup() demo: Opens a file, calls dup(fd) to get a copy. Writes via both.
+  2. dup2() demo: Opens a file, calls dup2(fd, 10) to force fd number 10.
+     Writes via both the original fd and fd 10.
+  3. stdout redirect demo: Saves stdout, dup2 redirects stdout to a file,
+     printf writes to file, restores stdout.
+
+KEY POINTS:
+  - Both duplicated fds share the same file offset and flags.
+  - Closing one does NOT close the other.
+  - dup2() is essential for shell-style I/O redirection.
+
+--------------------------------------------------------------------------------
+EXERCISE 11b - Child Executes Program to Add Two Numbers
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  Demonstrates the fork-exec pattern: fork creates a child, and exec replaces
+  the child's process image with a different program. The parent waits for
+  the child to complete using waitpid().
+
+SYSTEM CALLS USED:
+  fork()    - creates child
+  execl()   - replaces child with add_nums program
+  waitpid() - parent waits for child to finish
+  atoi()    - converts string arguments to integers
+
+HOW THE PROGRAM WORKS:
+  1. add_nums.c: standalone program that takes two strings as command-line
+     arguments, converts them to integers with atoi(), and prints their sum.
+  2. Main (11b.c): forks a child. Child calls execl("./add_nums", ..., "25",
+     "37", NULL) passing the numbers as string arguments.
+  3. add_nums runs in the child's process space, prints the sum.
+  4. Parent calls waitpid() and prints the child's exit status.
+
+KEY POINTS:
+  - execl() arguments after the program path become argv[] in the new program.
+  - exec() family always takes strings; use atoi() / strtol() in the child.
+  - After exec(), nothing from the original child code runs (it's replaced).
+
+--------------------------------------------------------------------------------
+EXERCISE 12a - Zombie Process: Demonstration and Solution
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  A zombie process is one that has exited but whose entry remains in the
+  process table because the parent hasn't called wait() to collect its status.
+  It consumes a PID slot but no memory or CPU.
+
+SYSTEM CALLS USED:
+  fork()     - creates child
+  exit()     - child terminates
+  wait()     - collects child status (removes zombie)
+  waitpid()  - non-blocking wait in SIGCHLD handler
+  signal()   - sets SIGCHLD handler for solution
+
+HOW THE PROGRAM WORKS:
+  PART 1 - Demonstrating Zombie:
+  1. Fork a child. Child exits immediately.
+  2. Parent sleeps for 10 seconds WITHOUT calling wait().
+  3. During sleep, child is a zombie (visible as <defunct> in ps output).
+  4. After sleep, parent calls wait() to reap it.
+
+  PART 2 - Solution using SIGCHLD:
+  1. Register a SIGCHLD signal handler using signal().
+  2. SIGCHLD is sent to parent whenever a child terminates.
+  3. In the handler, call waitpid(-1, &status, WNOHANG) in a loop to
+     reap ALL terminated children without blocking.
+  4. Fork a child that exits immediately. SIGCHLD fires, handler reaps it
+     automatically. No zombie is created.
+
+KEY POINTS:
+  - WNOHANG makes waitpid() non-blocking (returns 0 if no child has exited yet).
+  - Loop in handler with waitpid(-1, ...) handles multiple simultaneous exits.
+  - A zombie holds only the process table entry, not memory pages.
+
+--------------------------------------------------------------------------------
+EXERCISE 12b - Child and Parent with Environment Variables (echoall)
+--------------------------------------------------------------------------------
+
+CONCEPT:
+  Environment variables are name=value pairs available to processes. A child
+  inherits the parent's environment. setenv() adds or modifies variables.
+  execle() or putenv() can pass custom environments to exec'd programs.
+
+SYSTEM CALLS / FUNCTIONS USED:
+  fork()     - creates child and parent
+  setenv()   - sets an environment variable
+  getenv()   - retrieves an environment variable value
+  execl()    - executes the envprint program
+  waitpid()  - parent waits for child
+
+HOW THE PROGRAM WORKS:
+  1. envprint.c: standalone program that checks argv[1] for mode:
+     - "child" mode: prints user-defined env vars (MY_VAR1, MY_VAR2, CHILD_MSG)
+     - "parent" mode: prints default env vars (HOME, PATH, USER, SHELL)
+
+  2. Main (12b.c):
+     - Forks a child.
+     - Child: calls setenv() to set MY_VAR1, MY_VAR2, CHILD_MSG,
+       then execl("./envprint", ..., "child", NULL).
+       envprint prints the user-defined variables.
+     - Parent: waits for child with waitpid(), then execl("./envprint",
+       ..., "parent", NULL). envprint prints default system variables.
+
+KEY POINTS:
+  - setenv() sets variables in the current process's environment.
+  - After fork(), child inherits the parent's environment.
+  - After exec(), the new program inherits the calling process's environment.
+  - getenv() returns NULL if the variable is not set.
+  - environ (extern char **environ) contains all environment variables.
+
+================================================================================
+                     END OF EXPLANATION DOCUMENT
+================================================================================
