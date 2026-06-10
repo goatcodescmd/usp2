@@ -1,0 +1,60 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+int my_system(const char *command) {
+    pid_t pid;
+    int status;
+
+    if (command == NULL)
+        return 1;
+
+    pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return -1;
+    }
+
+    if (pid == 0) {
+        // Child executes the command via shell
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        perror("execl");
+        _exit(127);
+    } else {
+        // Parent waits for child
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("waitpid");
+            return -1;
+        }
+        if (WIFEXITED(status))
+            return WEXITSTATUS(status);
+        return -1;
+    }
+}
+
+int main() {
+    int ret;
+    printf("Simulating system() function:\n\n");
+
+    printf("Running 'ls -l':\n");
+    ret = my_system("ls -l");
+    printf("\nReturn status: %d\n", ret);
+
+    printf("\nRunning 'date':\n");
+    ret = my_system("date");
+    printf("\nReturn status: %d\n", ret);
+
+    printf("\nRunning 'echo Hello from my_system':\n");
+    ret = my_system("echo Hello from my_system");
+    printf("\nReturn status: %d\n", ret);
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 2b.c        (paste the above code, then :wq to save)
+cc 2b.c
+./a.out
+*/

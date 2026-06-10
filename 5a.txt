@@ -1,0 +1,56 @@
+#include <stdio.h>
+#include <sys/stat.h>
+#include <utime.h>
+#include <time.h>
+
+int main(int argc, char *argv[]) {
+    struct stat sb;
+    struct utimbuf new_times;
+
+    if (argc < 3) {
+        printf("Usage: %s <source_file> <dest_file>\n", argv[0]);
+        return 1;
+    }
+
+    // Get stat of source file
+    if (stat(argv[1], &sb) < 0) {
+        perror("stat");
+        return 1;
+    }
+
+    printf("Source file : %s\n", argv[1]);
+    printf("  Access time      : %s", ctime(&sb.st_atime));
+    printf("  Modification time: %s", ctime(&sb.st_mtime));
+
+    // Copy times to destination file
+    new_times.actime  = sb.st_atime;
+    new_times.modtime = sb.st_mtime;
+
+    if (utime(argv[2], &new_times) < 0) {
+        perror("utime");
+        return 1;
+    }
+
+    // Verify
+    if (stat(argv[2], &sb) < 0) {
+        perror("stat dest");
+        return 1;
+    }
+
+    printf("\nDestination file: %s\n", argv[2]);
+    printf("  Access time (copied)      : %s", ctime(&sb.st_atime));
+    printf("  Modification time (copied): %s", ctime(&sb.st_mtime));
+    printf("\nTimestamps copied successfully!\n");
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 5a.c        (paste the above code, then :wq to save)
+cc 5a.c
+touch src.txt dest.txt
+echo "source" > src.txt
+./a.out src.txt dest.txt
+stat src.txt dest.txt
+*/

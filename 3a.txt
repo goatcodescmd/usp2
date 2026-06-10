@@ -1,0 +1,62 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+int main(int argc, char *argv[]) {
+    DIR *dp;
+    struct dirent *entry;
+    struct stat sb;
+    char filepath[1024];
+    const char *dirpath;
+
+    dirpath = (argc > 1) ? argv[1] : ".";
+
+    dp = opendir(dirpath);
+    if (dp == NULL) {
+        perror("opendir");
+        return 1;
+    }
+
+    printf("Scanning directory: %s\n", dirpath);
+    printf("Removing empty files...\n\n");
+
+    while ((entry = readdir(dp)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
+
+        if (stat(filepath, &sb) < 0) {
+            perror("stat");
+            continue;
+        }
+
+        // Check if it's a regular file and empty
+        if (S_ISREG(sb.st_mode) && sb.st_size == 0) {
+            printf("Removing empty file: %s\n", filepath);
+            if (unlink(filepath) < 0) {
+                perror("unlink");
+            } else {
+                printf("  -> Deleted successfully.\n");
+            }
+        }
+    }
+
+    closedir(dp);
+    printf("\nDone.\n");
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 3a.c        (paste the above code, then :wq to save)
+cc 3a.c
+mkdir testdir
+touch testdir/empty1.txt testdir/empty2.txt
+echo "data" > testdir/notempty.txt
+./a.out testdir
+*/

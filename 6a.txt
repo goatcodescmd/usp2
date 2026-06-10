@@ -1,0 +1,66 @@
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+
+int main(int argc, char *argv[]) {
+    int fd_read, fd_write, fd_stdout_backup;
+    char buf[256];
+    ssize_t n;
+    int num_chars;
+
+    if (argc < 3) {
+        printf("Usage: %s <filename> <num_chars>\n", argv[0]);
+        return 1;
+    }
+
+    num_chars = atoi(argv[2]);
+
+    // Open file for reading
+    fd_read = open(argv[1], O_RDONLY);
+    if (fd_read < 0) { perror("open read"); return 1; }
+
+    // Read n characters
+    n = read(fd_read, buf, num_chars);
+    if (n < 0) { perror("read"); return 1; }
+    buf[n] = '\0';
+    close(fd_read);
+
+    printf("Read %ld characters: [%s]\n", (long)n, buf);
+
+    // Open file for appending
+    fd_write = open(argv[1], O_WRONLY | O_APPEND);
+    if (fd_write < 0) { perror("open write"); return 1; }
+
+    // Backup stdout, redirect stdout to file using dup2
+    fd_stdout_backup = dup(STDOUT_FILENO);
+    dup2(fd_write, STDOUT_FILENO);
+
+    // This printf now writes to the file
+    printf("%s", buf);
+
+    // Restore stdout
+    dup2(fd_stdout_backup, STDOUT_FILENO);
+    close(fd_stdout_backup);
+    close(fd_write);
+
+    printf("Appended %ld characters back to file using dup2.\n", (long)n);
+    printf("File contents now:\n");
+    // Show file content
+    fd_read = open(argv[1], O_RDONLY);
+    n = read(fd_read, buf, sizeof(buf)-1);
+    buf[n] = '\0';
+    printf("%s\n", buf);
+    close(fd_read);
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 6a.c        (paste the above code, then :wq to save)
+cc 6a.c
+echo "Hello Unix World" > testfile.txt
+./a.out testfile.txt 5
+cat testfile.txt
+*/

@@ -1,0 +1,80 @@
+// Two files needed: 8b.c (parent) and access_demo.c (child program)
+
+// ===================== FILE 1: access_demo.c =====================
+// vi access_demo.c
+/*
+#include <stdio.h>
+#include <unistd.h>
+
+int main(int argc, char *argv[]) {
+    const char *filename;
+    filename = (argc > 1) ? argv[1] : "testfile.txt";
+
+    printf("[access_demo] PID: %d\n", getpid());
+    printf("[access_demo] Checking access for: %s\n", filename);
+
+    if (access(filename, F_OK) == 0) printf("  File exists\n");
+    else printf("  File does NOT exist\n");
+
+    if (access(filename, R_OK) == 0) printf("  Read permission: YES\n");
+    else printf("  Read permission: NO\n");
+
+    if (access(filename, W_OK) == 0) printf("  Write permission: YES\n");
+    else printf("  Write permission: NO\n");
+
+    if (access(filename, X_OK) == 0) printf("  Execute permission: YES\n");
+    else printf("  Execute permission: NO\n");
+
+    return 0;
+}
+*/
+// cc access_demo.c -o access_demo
+
+// ===================== FILE 2: 8b.c (main program) =====================
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+int main() {
+    pid_t pid;
+    int status;
+
+    printf("Parent PID: %d\n", getpid());
+
+    pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // Child process
+        printf("Child PID: %d, Parent PID: %d\n", getpid(), getppid());
+        printf("Child: executing access_demo...\n");
+        execl("./access_demo", "access_demo", "testfile.txt", (char *)NULL);
+        perror("execl");
+        _exit(1);
+    } else {
+        // Parent waits
+        printf("Parent: waiting for child (PID %d)...\n", pid);
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status))
+            printf("Parent: child exited with status %d\n", WEXITSTATUS(status));
+    }
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+1. vi access_demo.c     (write access_demo.c as shown above, then :wq)
+   cc access_demo.c -o access_demo
+
+2. touch testfile.txt   (create test file)
+   chmod 644 testfile.txt
+
+3. vi 8b.c              (paste the main program above, then :wq)
+   cc 8b.c
+   ./a.out
+*/

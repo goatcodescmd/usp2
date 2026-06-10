@@ -1,0 +1,85 @@
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    int fd;
+    struct flock fl;
+    struct stat sb;
+    char buf[51];
+    ssize_t n;
+    off_t region_start;
+    const char *filename;
+
+    filename = (argc > 1) ? argv[1] : "locktest.txt";
+
+    fd = open(filename, O_RDWR | O_CREAT, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+
+    // Ensure file has at least 100 bytes
+    fstat(fd, &sb);
+    if (sb.st_size < 100) {
+        char padding[100];
+        memset(padding, 'A', 100);
+        write(fd, padding, 100);
+        fstat(fd, &sb);
+    }
+
+    region_start = sb.st_size - 100;
+    printf("File size: %ld bytes\n", (long)sb.st_size);
+    printf("Checking lock on last 100 bytes (from offset %ld)...\n", (long)region_start);
+
+    // Check if region is locked (F_GETLK)
+    fl.l_type   = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start  = region_start;
+    fl.l_len    = 100;
+    fl.l_pid    = 0;
+
+    if (fcntl(fd, F_GETLK, &fl) < 0) {
+        perror("fcntl F_GETLK");
+        close(fd);
+        return 1;
+    }
+
+    if (fl.l_type != F_UNLCK) {
+        printf("Region is LOCKED by process PID: %d\n", fl.l_pid);
+    } else {
+        printf("Region is NOT locked. Applying exclusive lock...\n");
+
+        fl.l_type   = F_WRLCK;
+        fl.l_whence = SEEK_SET;
+        fl.l_start  = region_start;
+        fl.l_len    = 100;
+
+        if (fcntl(fd, F_SETLK, &fl) < 0) {
+            perror("fcntl F_SETLK");
+            close(fd);
+            return 1;
+        }
+        printf("Exclusive lock acquired!\n");
+
+        // Read last 50 bytes
+        lseek(fd, sb.st_size - 50, SEEK_SET);
+        n = read(fd, buf, 50);
+        buf[n] = '\0';
+        printf("Last 50 bytes: [%s]\n", buf);
+
+        // Unlock
+        fl.l_type = F_UNLCK;
+        fcntl(fd, F_SETLK, &fl);
+        printf("Region unlocked.\n");
+    }
+
+    close(fd);
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 6b.c        (paste the above code, then :wq to save)
+cc 6b.c
+./a.out locktest.txt
+*/

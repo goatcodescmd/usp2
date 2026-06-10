@@ -1,0 +1,67 @@
+// Two files needed: 11b.c (parent) and add_nums.c (child program)
+
+// ===================== FILE 1: add_nums.c =====================
+// vi add_nums.c
+/*
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <num1> <num2>\n", argv[0]);
+        return 1;
+    }
+    int a = atoi(argv[1]);
+    int b = atoi(argv[2]);
+    printf("[add_nums] PID: %d\n", getpid());
+    printf("[add_nums] %d + %d = %d\n", a, b, a + b);
+    return 0;
+}
+*/
+// cc add_nums.c -o add_nums
+
+// ===================== FILE 2: 11b.c =====================
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <stdlib.h>
+
+int main() {
+    pid_t pid;
+    int status;
+
+    printf("Parent PID: %d\n", getpid());
+
+    pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // Child executes add_nums with two integer arguments
+        printf("Child PID: %d\n", getpid());
+        execl("./add_nums", "add_nums", "25", "37", (char *)NULL);
+        perror("execl");
+        _exit(1);
+    } else {
+        // Parent waits for child
+        printf("Parent: waiting for child (PID %d) to complete...\n", pid);
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status))
+            printf("Parent: child exited with status %d\n", WEXITSTATUS(status));
+    }
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+1. vi add_nums.c     (write add_nums.c as shown above, then :wq)
+   cc add_nums.c -o add_nums
+
+2. vi 11b.c          (paste main program above, then :wq)
+   cc 11b.c
+   ./a.out
+*/

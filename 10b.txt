@@ -1,0 +1,62 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+int main() {
+    pid_t pid1, pid2, ret;
+    int status;
+
+    printf("=== Demonstrating wait() ===\n");
+    printf("Parent PID: %d\n\n", getpid());
+
+    // Fork first child
+    pid1 = fork();
+    if (pid1 == 0) {
+        printf("[Child 1] PID: %d, sleeping 2 sec...\n", getpid());
+        sleep(2);
+        printf("[Child 1] Exiting with code 5\n");
+        exit(5);
+    }
+
+    // Fork second child
+    pid2 = fork();
+    if (pid2 == 0) {
+        printf("[Child 2] PID: %d, sleeping 1 sec...\n", getpid());
+        sleep(1);
+        printf("[Child 2] Exiting with code 10\n");
+        exit(10);
+    }
+
+    printf("Parent: forked Child1=%d, Child2=%d\n\n", pid1, pid2);
+
+    // --- Using wait() (waits for ANY child) ---
+    printf("=== Using wait() ===\n");
+    ret = wait(&status);
+    if (WIFEXITED(status))
+        printf("wait() reaped child PID %d, exit status: %d\n", ret, WEXITSTATUS(status));
+
+    // --- Using waitpid() (waits for SPECIFIC child) ---
+    printf("\n=== Using waitpid() for Child1 (PID %d) ===\n", pid1);
+    ret = waitpid(pid1, &status, 0);
+    if (ret == pid1) {
+        if (WIFEXITED(status))
+            printf("waitpid() reaped child PID %d, exit status: %d\n", ret, WEXITSTATUS(status));
+    } else {
+        printf("Child 1 already reaped by wait()\n");
+        // Wait for remaining child
+        waitpid(pid2, &status, 0);
+        printf("waitpid() reaped Child2 PID %d, exit status: %d\n", pid2, WEXITSTATUS(status));
+    }
+
+    printf("\nAll children reaped. Parent exiting.\n");
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 10b.c        (paste the above code, then :wq to save)
+cc 10b.c
+./a.out
+*/

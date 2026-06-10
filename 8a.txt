@@ -1,0 +1,43 @@
+#include <stdio.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    struct stat sb;
+
+    if (argc < 2) {
+        printf("Usage: %s <filename>\n", argv[0]);
+        return 1;
+    }
+
+    if (lstat(argv[1], &sb) < 0) {
+        perror("lstat");
+        return 1;
+    }
+
+    printf("File: %s\n", argv[1]);
+    printf("Type: ");
+
+    switch (sb.st_mode & S_IFMT) {
+        case S_IFREG:  printf("Regular file\n"); break;
+        case S_IFDIR:  printf("Directory\n"); break;
+        case S_IFLNK:  printf("Symbolic link\n"); break;
+        case S_IFCHR:  printf("Character device\n"); break;
+        case S_IFBLK:  printf("Block device\n"); break;
+        case S_IFIFO:  printf("FIFO (named pipe)\n"); break;
+        case S_IFSOCK: printf("Socket\n"); break;
+        default:       printf("Unknown type\n"); break;
+    }
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 8a.c        (paste the above code, then :wq to save)
+cc 8a.c
+./a.out 8a.c
+./a.out /dev/null
+./a.out /tmp
+ln -s 8a.c mylink
+./a.out mylink
+*/

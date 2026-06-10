@@ -1,0 +1,51 @@
+#include <stdio.h>
+#include <setjmp.h>
+
+static jmp_buf env;
+
+void demonstrate() {
+    // register variable - value may be RESTORED after longjmp (compiler dependent)
+    register int reg_var = 10;
+    // volatile variable - value IS preserved after longjmp
+    volatile int vol_var = 20;
+    // ordinary variable - value may NOT be preserved
+    int normal_var = 30;
+
+    printf("Before setjmp:\n");
+    printf("  register var = %d\n", reg_var);
+    printf("  volatile var = %d\n", vol_var);
+    printf("  normal var   = %d\n", normal_var);
+
+    if (setjmp(env) == 0) {
+        // First call to setjmp: modify variables
+        reg_var    = 100;
+        vol_var    = 200;
+        normal_var = 300;
+
+        printf("\nAfter modification (before longjmp):\n");
+        printf("  register var = %d\n", reg_var);
+        printf("  volatile var = %d\n", vol_var);
+        printf("  normal var   = %d\n", normal_var);
+
+        longjmp(env, 1);  // Jump back to setjmp
+    } else {
+        // Returned from longjmp
+        printf("\nAfter longjmp (returned to setjmp point):\n");
+        printf("  register var = %d (may be restored to 10)\n", reg_var);
+        printf("  volatile var = %d (preserved: should be 200)\n", vol_var);
+        printf("  normal var   = %d (may or may not be restored)\n", normal_var);
+        printf("\nConclusion: volatile variables are reliably preserved across longjmp.\n");
+    }
+}
+
+int main() {
+    demonstrate();
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 7a.c        (paste the above code, then :wq to save)
+cc 7a.c
+./a.out
+*/

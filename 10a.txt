@@ -1,0 +1,82 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <time.h>
+#include <string.h>
+
+void daemonize() {
+    pid_t pid;
+
+    // Step 1: Fork and parent exits
+    pid = fork();
+    if (pid < 0) { perror("fork"); exit(1); }
+    if (pid > 0) {
+        printf("Parent exiting. Daemon PID: %d\n", pid);
+        exit(0);  // Parent exits
+    }
+
+    // Step 2: Create new session (child becomes session leader)
+    if (setsid() < 0) { perror("setsid"); exit(1); }
+
+    // Step 3: Ignore SIGHUP, fork again to ensure not session leader
+    signal(SIGHUP, SIG_IGN);
+    pid = fork();
+    if (pid < 0) { perror("fork2"); exit(1); }
+    if (pid > 0) exit(0);
+
+    // Step 4: Change working directory to root
+    chdir("/");
+
+    // Step 5: Reset file mode creation mask
+    umask(0);
+
+    // Step 6: Close all open file descriptors
+    int fd;
+    for (fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--)
+        close(fd);
+
+    // Redirect stdin/stdout/stderr to /dev/null
+    open("/dev/null", O_RDONLY);  // fd 0
+    open("/dev/null", O_RDWR);   // fd 1
+    open("/dev/null", O_RDWR);   // fd 2
+}
+
+int main() {
+    int log_fd;
+    char msg[256];
+    time_t t;
+    int count = 0;
+
+    printf("Initializing daemon...\n");
+    daemonize();
+
+    // Daemon work: write to a log file every 5 seconds
+    log_fd = open("/tmp/daemon_log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (log_fd < 0) exit(1);
+
+    while (count < 5) {
+        t = time(NULL);
+        snprintf(msg, sizeof(msg), "Daemon alive at: %s", ctime(&t));
+        write(log_fd, msg, strlen(msg));
+        sleep(5);
+        count++;
+    }
+    write(log_fd, "Daemon exiting.\n", 16);
+    close(log_fd);
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 10a.c        (paste the above code, then :wq to save)
+cc 10a.c
+./a.out
+ps -aux | grep a.out     (to see daemon process)
+sleep 30
+cat /tmp/daemon_log.txt  (to see daemon output)
+*/

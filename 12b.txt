@@ -1,0 +1,81 @@
+// Two files needed: 12b.c (main) and envprint.c (child/parent exec program)
+
+// ===================== FILE 1: envprint.c =====================
+// vi envprint.c
+/*
+#include <stdio.h>
+#include <stdlib.h>
+
+extern char **environ;
+
+int main(int argc, char *argv[]) {
+    int i;
+    printf("[envprint] PID: %d, Mode: %s\n", getpid(), argc > 1 ? argv[1] : "default");
+
+    if (argc > 1 && argv[1][0] == 'c') {
+        // Child mode: print user-defined env vars
+        printf("User-defined environment variables:\n");
+        printf("  MY_VAR1 = %s\n", getenv("MY_VAR1") ? getenv("MY_VAR1") : "(not set)");
+        printf("  MY_VAR2 = %s\n", getenv("MY_VAR2") ? getenv("MY_VAR2") : "(not set)");
+        printf("  CHILD_MSG = %s\n", getenv("CHILD_MSG") ? getenv("CHILD_MSG") : "(not set)");
+    } else {
+        // Parent mode: print default env vars
+        printf("Default environment variables:\n");
+        printf("  HOME = %s\n", getenv("HOME") ? getenv("HOME") : "(not set)");
+        printf("  PATH = %s\n", getenv("PATH") ? getenv("PATH") : "(not set)");
+        printf("  USER = %s\n", getenv("USER") ? getenv("USER") : "(not set)");
+        printf("  SHELL = %s\n", getenv("SHELL") ? getenv("SHELL") : "(not set)");
+    }
+    return 0;
+}
+*/
+// cc envprint.c -o envprint
+
+// ===================== FILE 2: 12b.c =====================
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+int main() {
+    pid_t pid;
+    int status;
+
+    printf("Main PID: %d\n\n", getpid());
+
+    pid = fork();
+    if (pid < 0) { perror("fork"); return 1; }
+
+    if (pid == 0) {
+        // Child: set user-defined env vars, then exec
+        printf("[Child] PID: %d\n", getpid());
+        setenv("MY_VAR1", "HelloFromChild", 1);
+        setenv("MY_VAR2", "UnixLab2026", 1);
+        setenv("CHILD_MSG", "I am the child process", 1);
+
+        printf("[Child] Executing envprint in child mode (user-defined vars):\n");
+        execl("./envprint", "envprint", "child", (char *)NULL);
+        perror("execl");
+        _exit(1);
+    } else {
+        // Parent: wait for child, then exec to show default vars
+        waitpid(pid, &status, 0);
+        printf("\n[Parent] PID: %d\n", getpid());
+        printf("[Parent] Executing envprint in parent mode (default env vars):\n");
+        execl("./envprint", "envprint", "parent", (char *)NULL);
+        perror("execl");
+    }
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+1. vi envprint.c     (write envprint.c as shown above, then :wq)
+   cc envprint.c -o envprint
+
+2. vi 12b.c          (paste main program above, then :wq)
+   cc 12b.c
+   ./a.out
+*/

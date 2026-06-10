@@ -1,0 +1,45 @@
+#include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
+
+void sigint_handler(int signo) {
+    printf("\n[Handler] Caught SIGINT (Ctrl+C)!\n");
+    printf("[Handler] Resetting SIGINT to default action...\n");
+
+    // Reset SIGINT to default using signal()
+    signal(SIGINT, SIG_DFL);
+    printf("[Handler] Done. Press Ctrl+C again to terminate.\n");
+}
+
+int main() {
+    struct sigaction sa;
+
+    // Set up sigaction
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGINT, &sa, NULL) < 0) {
+        perror("sigaction");
+        return 1;
+    }
+
+    printf("Program running. Press Ctrl+C to trigger SIGINT handler.\n");
+    printf("After first Ctrl+C, the handler resets to default.\n");
+    printf("Press Ctrl+C again to terminate normally.\n\n");
+
+    while (1) {
+        printf("Waiting... (sleep 2)\n");
+        sleep(2);
+    }
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 5b.c        (paste the above code, then :wq to save)
+cc 5b.c
+./a.out
+(Press Ctrl+C once to trigger handler; press Ctrl+C again to terminate)
+*/

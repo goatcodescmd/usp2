@@ -1,0 +1,67 @@
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+
+int main() {
+    int fd, fd_dup, fd_dup2;
+    const char *msg1 = "Written via dup() file descriptor\n";
+    const char *msg2 = "Written via dup2() file descriptor\n";
+
+    printf("=== Demonstrating dup() ===\n");
+
+    // Create a file
+    fd = open("dup_test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+    printf("Original fd: %d\n", fd);
+
+    // dup() - duplicates fd to LOWEST available fd number
+    fd_dup = dup(fd);
+    printf("dup() created fd: %d\n", fd_dup);
+    write(fd,     "Original fd write\n", 18);
+    write(fd_dup, msg1, strlen(msg1));
+
+    close(fd);
+    close(fd_dup);
+
+    printf("\n=== Demonstrating dup2() ===\n");
+
+    fd = open("dup2_test.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+    printf("Original fd: %d\n", fd);
+
+    // dup2() - duplicates fd to a SPECIFIC fd number (here: 10)
+    fd_dup2 = dup2(fd, 10);
+    printf("dup2() created fd: %d (forced to fd 10)\n", fd_dup2);
+    write(fd,      "Original fd write\n", 18);
+    write(fd_dup2, msg2, strlen(msg2));
+
+    close(fd);
+    close(fd_dup2);
+
+    printf("\n=== Redirecting stdout with dup2() ===\n");
+    int stdout_bak = dup(STDOUT_FILENO);
+    int out_fd = open("stdout_redirect.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    dup2(out_fd, STDOUT_FILENO);         // stdout -> file
+    printf("This goes to the file, not the terminal!\n");
+    dup2(stdout_bak, STDOUT_FILENO);     // restore stdout
+    close(out_fd);
+    close(stdout_bak);
+    printf("stdout restored. Check stdout_redirect.txt\n");
+
+    printf("\nKey difference:\n");
+    printf("  dup()  - assigns lowest available fd automatically\n");
+    printf("  dup2() - assigns to a specific fd you specify\n");
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 11a.c        (paste the above code, then :wq to save)
+cc 11a.c
+./a.out
+cat dup_test.txt
+cat dup2_test.txt
+cat stdout_redirect.txt
+*/

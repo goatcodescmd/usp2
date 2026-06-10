@@ -1,0 +1,57 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
+int main() {
+    const char *original = "original.txt";
+    const char *hardlink = "hardlink.txt";
+    const char *softlink = "softlink.txt";
+    struct stat sb1, sb2, sb3;
+    FILE *f;
+
+    // Create original file
+    f = fopen(original, "w");
+    if (!f) { perror("fopen"); return 1; }
+    fprintf(f, "This is the original file.\n");
+    fclose(f);
+
+    // Create hard link
+    if (link(original, hardlink) < 0) {
+        perror("link (hard)");
+        return 1;
+    }
+    printf("Hard link '%s' created for '%s'\n", hardlink, original);
+
+    // Create soft (symbolic) link
+    if (symlink(original, softlink) < 0) {
+        perror("symlink");
+        return 1;
+    }
+    printf("Soft link '%s' created for '%s'\n\n", softlink, original);
+
+    // Display stat info
+    stat(original, &sb1);
+    stat(hardlink, &sb2);
+    lstat(softlink, &sb3);
+
+    printf("File        | Inode     | Size | Links\n");
+    printf("------------|-----------|------|------\n");
+    printf("%-11s | %-9ld | %-4ld | %ld\n", original, (long)sb1.st_ino, (long)sb1.st_size, (long)sb1.st_nlink);
+    printf("%-11s | %-9ld | %-4ld | %ld\n", hardlink, (long)sb2.st_ino, (long)sb2.st_size, (long)sb2.st_nlink);
+    printf("%-11s | %-9ld | %-4ld | %ld  (soft link)\n", softlink, (long)sb3.st_ino, (long)sb3.st_size, (long)sb3.st_nlink);
+
+    printf("\nObservation:\n");
+    printf("- Hard link has SAME inode as original (%ld)\n", (long)sb1.st_ino);
+    printf("- Soft link has DIFFERENT inode (%ld)\n", (long)sb3.st_ino);
+    printf("- Link count for original and hard link: %ld\n", (long)sb1.st_nlink);
+
+    return 0;
+}
+
+/*
+HOW TO RUN:
+vi 4a.c        (paste the above code, then :wq to save)
+cc 4a.c
+./a.out
+ls -li original.txt hardlink.txt softlink.txt
+*/
